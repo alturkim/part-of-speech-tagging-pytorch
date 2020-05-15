@@ -3,3 +3,4 @@ idea/
 __pycache__/	
 dummy2.log
 main.py
+models/__pycache__/

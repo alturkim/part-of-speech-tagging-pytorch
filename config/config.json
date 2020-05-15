@@ -9,5 +9,6 @@
     "minimum_count_word": 10,
     "minimum_count_tag": 1,
     "vocab_size": 28309,
-    "tag_set_size": 39
+    "tag_set_size": 39,
+    "metrics": ["accuracy"]
 }

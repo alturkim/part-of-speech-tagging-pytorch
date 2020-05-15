@@ -29,6 +29,23 @@ class Config:
         return self.__dict__
 
 
+class RunningAverage:
+    def __init__(self):
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def reset(self):
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val):
+        self.count += 1
+        self.sum += val
+        self.avg = self.sum / self.count
+
+
 def set_logger(log_config_path):
     logging.config.fileConfig(log_config_path)
 

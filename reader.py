@@ -13,7 +13,7 @@ class POSDataset(Dataset):
         self.data_size = self.sentences.size(0)
 
     def __getitem__(self, i):
-        return self.sentences[i], self.lengths[i], self.labels[i]
+        return self.sentences[i], self.labels[i], self.lengths[i]
 
     def __len__(self):
         return self.data_size
@@ -32,7 +32,7 @@ class DataReader:
         """
         self.data_dir = data_dir
         # loading data config
-        self.config = Config('config.json')
+        self.config = Config('config/config.json')
 
         # loading vocab and tag set
         with open(os.path.join(data_dir, 'vocab.txt'), 'r') as f:
