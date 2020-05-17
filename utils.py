@@ -50,14 +50,14 @@ def set_logger(log_config_path):
     logging.config.fileConfig(log_config_path)
 
 
-def save_checkpoint(state, is_best):
+def save_checkpoint(state, is_best, checkpoint_dir):
     """Saves model and training parameters
 
     Args:
         state: (dict) model's state_dict
         is_best: (bool) True if model is the best seen so far.
+        checkpoint_dir: (str) Directory name to save checkpoint files in.
     """
-    checkpoint_dir = './checkpoints'
     if not os.path.exists(checkpoint_dir):
         print("Creating a directory {}".format(checkpoint_dir))
         os.mkdir(checkpoint_dir)
@@ -66,18 +66,18 @@ def save_checkpoint(state, is_best):
         torch.save(state, os.path.join(checkpoint_dir, 'BEST_checkpoint.pth.tar'))
 
 
-def load_checkpoint(checkpoint_file, model):
+def load_checkpoint(checkpoint_path, model, optimizer=None):
     """Loads model and training parameters
 
     Args:
-        checkpoint: (str) file name containing the checkpoint
+        checkpoint_path: (str) path to checkpoint file to be used
         model: (torch.nn.Module) model for which the parameters are loaded
+        optimizer: (torch.nn.optim) optimizer to be resumed from checkpoint
     """
-    checkpoint_dir = './checkpoints'
-    path = os.path.join(checkpoint_dir, checkpoint_file)
-    if not os.path.exists(path):
-        raise IOError('Checkpoint file {} does not exist'.format(path))
-    logging.info('Restoring parameters from {}'.format(path))
-    checkpoint = torch.load(path)
+    if not os.path.exists(checkpoint_path):
+        raise IOError('Checkpoint file {} does not exist'.format(checkpoint_path))
+    logging.info('Restoring parameters from {}'.format(checkpoint_path))
+    checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint['state_dict'])
-
+    if optimizer:
+        optimizer.load_state_dict(checkpoint['optim_dict'])

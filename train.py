@@ -13,12 +13,15 @@ from reader import DataReader, POSDataset
 from models.net import Net
 from models import net
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+if torch.cuda.is_available():
+    print('Training on GPU ... ')
+
 
 def parse_arguments(parser):
     parser.add_argument('--data_dir', default='data/', help="Directory containing the dataset")
     parser.add_argument('--config_dir', default='config/', help='Directory containing config.json')
-    parser.add_argument('--restore_file', help='Optional, name of the file in saved_models directory containing \
-                        pre-trained model to be loaded before training')
+    parser.add_argument('--checkpoint_dir', default='checkpoints/', help='Directory to save and load models parameters.')
 
     args = parser.parse_args()
     for k, v in vars(args).items():
@@ -26,42 +29,42 @@ def parse_arguments(parser):
     return args
 
 
-def train(model, optimizer, loss_fn, data_loader, accuracy_fn, config):
+def train(model, optimizer, criterion, data_loader):
     """Trains the model for one epoch
 
     Args:
         model: (torch.nn.Module) an instance of the model class.
         optimizer: (torch.optim) optimizer for model parameters
-        loss_fn:
+        criterion: a loss function
         data_loader: (torch.util.data.DataLoader)
-        metrics: (list) a list of metric to evaluate the model
-        config: (Config) a config object containing the model hyperparameters
-        epochs: (int) number of batches to train on.
     """
 
     # set the model to training mode
     model.train()
 
+    avg_loss = utils.RunningAverage()
+    avg_acc = utils.RunningAverage()
+
     for seqs, labels, lengths in data_loader:
-        # compute model output and loss
         outputs = model(seqs, lengths)
         labels = pack_padded_sequence(labels, lengths, batch_first=True, enforce_sorted=False).data
-        loss = loss_fn(outputs, labels)
-        acc = accuracy_fn(outputs, labels)
+        loss = criterion(outputs, labels.view(-1))
+        acc = net.accuracy(outputs, labels)
+        avg_loss.update(float(loss))
+        avg_acc.update(float(acc))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    return loss, acc
+    return avg_loss.avg, avg_acc.avg
 
 
-def evaluate(model, loss_fn, data_loader, accuracy_fn):
+def evaluate(model, criterion, data_loader):
     """Evaluates the model over all data in data_loader
 
     Args:
         model: (torch.nn.Module) an instance of the model class.
-        loss_fn:
+        criterion: a loss function
         data_loader: (torch.util.data.DataLoader)
-        accuracy_fn: (list) a list of metric to evaluate the model
     """
     # set the model to evaluation mode
     model.eval()
@@ -70,72 +73,64 @@ def evaluate(model, loss_fn, data_loader, accuracy_fn):
         # compute model output and loss
         outputs = model(seqs, lengths)
         labels = pack_padded_sequence(labels, lengths, batch_first=True, enforce_sorted=False).data
-        loss = loss_fn(outputs, labels)
-        acc = accuracy_fn(outputs, labels)
+        loss = criterion(outputs, labels.view(-1))
+        acc = net.accuracy(outputs, labels)
     return float(loss), float(acc)
 
 
-def train_and_evaluate(model, optimizer, loss_fn, accuracy_fn, train_loader, val_loader, config, epochs, checkpoint_file=None):
+def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, config, checkpoint_dir, checkpoint_file=None):
     """Trains and evaluates the model for `epochs` times
 
     Args:
         model: (torch.nn.Module) an instance of the model class.
         optimizer: (torch.optim) optimizer for model parameters
-        loss_fn:
-        data_loader: (torch.util.data.DataLoader)
-        metrics: (list) a list of metric to evaluate the model
+        criterion: a loss function
+        train_loader: (torch.util.data.DataLoader) loader for training data
+        val_loader: (torch.util.data.DataLoader) loader for validation data
         config: (Config) a config object containing the model hyperparameters
-        epochs: (int) number of batches to train on.
+        checkpoint_dir: (str) directory to save checkpoint files in
         checkpoint_file: (str) file name of checkpoint to be loaded before training
     """
 
     if checkpoint_file is not None:
-        utils.load_checkpoint(checkpoint_file, model)
+        utils.load_checkpoint(checkpoint_file, model, optimizer)
 
     losses = []
-    avg_loss = utils.RunningAverage()
-    avg_train_acc = utils.RunningAverage()
     best_val_acc = 0
 
-    for epoch in trange(epochs):
-        avg_loss.reset()
-        avg_train_acc.reset()
-        loss, train_acc = train(model, optimizer, loss_fn, train_loader, metric, config)
+    for epoch in trange(config.epochs):
+        loss, train_acc = train(model, optimizer, criterion, train_loader)
         losses.append(float(loss))
-        avg_loss.update(float(loss))
-        avg_train_acc.update(float(train_acc))
+        _, val_acc = evaluate(model, criterion, val_loader)
 
-        _, val_acc = evaluate(model, loss_fn, val_loader, metric)
-
-        logging.info('Epoch: ' + str(epoch) + ' Loss: ' + str(avg_loss.avg) \
-                     + '\nTraining Accuracy: ' + str(avg_train_acc.avg) + ' Validation Accuracy: ' + str(val_acc))
+        logging.info('Epoch: ' + str(epoch) + ' Loss: ' + str(loss) \
+                     + '\nTraining Accuracy: ' + str(train_acc) + ' Validation Accuracy: ' + str(val_acc))
 
         is_best = val_acc > best_val_acc
-
-        utils.save_checkpoint(state={'epoch': epoch + 1, 'state_dict': model.state_dict()}, is_best=is_best)
+        utils.save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(),
+                               'optim_dict': optimizer.state_dict()}, is_best, checkpoint_dir)
 
 
 if __name__ == '__main__':
     args = parse_arguments(argparse.ArgumentParser())
     data_dir = args.data_dir
     config_dir = args.config_dir
+    checkpoint_dir = args.checkpoint_dir
     utils.set_logger(os.path.join(config_dir, 'logging.conf'))
     config = Config(os.path.join(config_dir, 'config.json'))
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    reader = DataReader(data_dir, config)
+    train_dataset = POSDataset(*reader.create_input_tensors('train.txt', device))
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size)
+    val_dataset = POSDataset(*reader.create_input_tensors('dev.txt', device))
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
 
-    reader = DataReader('./data/', config)
-    train_dataset = POSDataset(*reader.create_input_tensors('train.txt'))
-    train_loader = DataLoader(train_dataset, batch_size=2000)
-    val_dataset = POSDataset(*reader.create_input_tensors('dev.txt'))
-    val_loader = DataLoader(val_dataset, batch_size=1000)
+    model = Net(config).to(device)
+    criterion = torch.nn.NLLLoss(ignore_index=0, reduction='mean').to(device)
+    optimizer = torch.optim.Adam(params=model.parameters(), lr=config.learning_rate)
 
-    model = Net(config)
-    metric = net.accuracy
-    loss_fn = net.loss_fn
-    optimizer = torch.optim.SGD(params=model.parameters(), lr=config.learning_rate)
-
-    train_and_evaluate(model, optimizer, loss_fn, metric, train_loader, val_loader, config, 1000, 'checkpoint.pth.tar')
+    train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, config, checkpoint_dir)
+    # os.path.join(checkpoint_dir, 'checkpoint.pth.tar')
 
 
 

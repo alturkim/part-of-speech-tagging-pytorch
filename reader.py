@@ -31,8 +31,7 @@ class DataReader:
             config: (Config) training hyperparameters
         """
         self.data_dir = data_dir
-        # loading data config
-        self.config = Config('config/config.json')
+        self.config = config
 
         # loading vocab and tag set
         with open(os.path.join(data_dir, 'vocab.txt'), 'r') as f:
@@ -46,7 +45,7 @@ class DataReader:
         self.unk_idx = self.vocab[self.config.unk_word]
         self.padword_idx = self.vocab[self.config.pad_word]
 
-    def create_input_tensors(self, data_file):
+    def create_input_tensors(self, data_file, device):
         sentences = []
         labels = []
         with open(os.path.join(self.data_dir, data_file), 'r') as f:
@@ -76,4 +75,6 @@ class DataReader:
             padded_labels.append(label + [self.padword_idx] * (max_len - len(label)))
             sentences_lengths.append(len(sentence))
 
-        return torch.LongTensor(padded_sentences), torch.LongTensor(padded_labels), torch.LongTensor(sentences_lengths)
+        return torch.tensor(padded_sentences, dtype=torch.int64, device=device), \
+               torch.tensor(padded_labels, dtype=torch.int64, device=device), \
+               torch.tensor(sentences_lengths, dtype=torch.int64, device=device)

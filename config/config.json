@@ -2,6 +2,7 @@
     "json_path": "config.json",
     "learning_rate": 0.001,
     "batch_size": 5,
+    "epochs": 10,
     "embedding_dim": 4,
     "lstm_hidden_dim": 3,
     "pad_word": "<PAD>",
@@ -10,5 +11,5 @@
     "minimum_count_tag": 1,
     "vocab_size": 28309,
     "tag_set_size": 39,
-    "metrics": ["accuracy"]
+    "save_summary_steps": 100
 }

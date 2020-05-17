@@ -22,22 +22,6 @@ class Net(nn.Module):
         return F.log_softmax(x, dim=1)
 
 
-def loss_fn(outputs, labels):
-    """Computes the cross entropy loss, excluding loss terms for <PAD>
-
-    Args:
-        outputs: (Tensor) models outputs. Dimension: batch_size*seq_len x tag_set_size
-        labels: (Tensor) ground truth label. Dimension: batch_size x seq_len. 0 for <PAD>
-
-    Returns:
-        loss: (Tensor) cross entropy loss for all tokens in the batch
-    """
-    labels = labels.view(-1)
-    criterion = torch.nn.NLLLoss(ignore_index=0, reduction='mean')
-    loss = criterion(outputs, labels)
-    return loss
-
-
 def accuracy(outputs, labels):
     """Computes the accuracy given models outputs and ground truth labels, excluding terms for <PAD>
 
