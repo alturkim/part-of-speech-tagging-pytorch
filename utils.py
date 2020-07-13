@@ -14,7 +14,7 @@ class Config:
         with open(json_path, 'r') as f:
             config = json.load(f)
             self.dict.update(config)
-    
+
     def save(self):
         with open(self.json_path, 'w') as f:
             json.dump(self.dict, f, indent=4)
@@ -23,7 +23,7 @@ class Config:
         with open(json_path, 'r') as f:
             config = json.load(f)
             self.dict.update(config)
-    
+
     @property
     def dict(self):
         return self.__dict__
@@ -40,9 +40,9 @@ class RunningAverage:
         self.sum = 0
         self.count = 0
 
-    def update(self, val):
-        self.count += 1
-        self.sum += val
+    def update(self, val, size=1):
+        self.count += size
+        self.sum += val * size
         self.avg = self.sum / self.count
 
 
@@ -66,7 +66,7 @@ def save_checkpoint(state, is_best, checkpoint_dir):
         torch.save(state, os.path.join(checkpoint_dir, 'BEST_checkpoint.pth.tar'))
 
 
-def load_checkpoint(checkpoint_path, model, optimizer=None):
+def load_checkpoint(checkpoint_path):
     """Loads model and training parameters
 
     Args:
@@ -78,6 +78,15 @@ def load_checkpoint(checkpoint_path, model, optimizer=None):
         raise IOError('Checkpoint file {} does not exist'.format(checkpoint_path))
     logging.info('Restoring parameters from {}'.format(checkpoint_path))
     checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['state_dict'])
-    if optimizer:
-        optimizer.load_state_dict(checkpoint['optim_dict'])
+    return checkpoint
+    # model.load_state_dict(checkpoint['state_dict'])
+    # if optimizer:
+    #     optimizer.load_state_dict(checkpoint['optim_dict'])
+
+
+def adjust_learning_rate(optimizer, epoch, lr, lr_decay):
+    logging.info('adjusting learning rate...')
+    lr = lr / (1 + (epoch + 1) * lr_decay)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    logging.info('The new learning rate is {}'.format(lr))

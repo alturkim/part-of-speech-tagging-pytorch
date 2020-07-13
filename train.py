@@ -6,22 +6,22 @@ from tqdm import trange
 import torch
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pack_padded_sequence
+from sklearn.metrics import f1_score
 
 import utils
 from utils import Config
 from reader import DataReader, POSDataset
-from models.net import Net
-from models import net
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-if torch.cuda.is_available():
-    print('Training on GPU ... ')
+from models.net import Net, ViterbiLoss, LSTM_CRF
+from models.viterbi_decoder import ViterbiDecoder
+from evaluate import evaluate
 
 
 def parse_arguments(parser):
     parser.add_argument('--data_dir', default='data/', help="Directory containing the dataset")
     parser.add_argument('--config_dir', default='config/', help='Directory containing config.json')
-    parser.add_argument('--checkpoint_dir', default='checkpoints/', help='Directory to save and load models parameters.')
+    parser.add_argument('--checkpoint_dir', default='checkpoints/',
+                        help='Directory to save and load models parameters.')
+    parser.add_argument('--checkpoint_file', help='Checkpoint file containing models parameters.')
 
     args = parser.parse_args()
     for k, v in vars(args).items():
@@ -29,7 +29,7 @@ def parse_arguments(parser):
     return args
 
 
-def train(model, optimizer, criterion, data_loader):
+def train(model, optimizer, criterion, data_loader, epoch, viterbi_decoder):
     """Trains the model for one epoch
 
     Args:
@@ -43,42 +43,35 @@ def train(model, optimizer, criterion, data_loader):
     model.train()
 
     avg_loss = utils.RunningAverage()
-    avg_acc = utils.RunningAverage()
+    avg_score = utils.RunningAverage()
 
-    for seqs, labels, lengths in data_loader:
-        outputs = model(seqs, lengths)
-        labels = pack_padded_sequence(labels, lengths, batch_first=True, enforce_sorted=False).data
-        loss = criterion(outputs, labels.view(-1))
-        acc = net.accuracy(outputs, labels)
-        avg_loss.update(float(loss))
-        avg_acc.update(float(acc))
+    for forward_char_seqs, backward_char_seqs, forward_markers_list, backward_markers_list, tag_seqs, char_seqs_lengths, tag_seqs_lengths in data_loader:
+        crf_scores, tag_seqs, tag_seqs_lengths = model(forward_char_seqs, backward_char_seqs, forward_markers_list,
+                                                       backward_markers_list, tag_seqs, char_seqs_lengths,
+                                                       tag_seqs_lengths)
+        loss = criterion(crf_scores, tag_seqs, tag_seqs_lengths)
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    return avg_loss.avg, avg_acc.avg
+        decoded = viterbi_decoder.decode(crf_scores.to("cpu"), tag_seqs_lengths.to("cpu"))
+
+        lengths = tag_seqs_lengths - 1
+        lengths = lengths.tolist()
+        decoded, _ = pack_padded_sequence(decoded, lengths, batch_first=True)
+        tag_seqs = tag_seqs % viterbi_decoder.tag_set_size
+        tag_seqs, _ = pack_padded_sequence(tag_seqs, lengths, batch_first=True)
+
+        f1 = f1_score(tag_seqs.to("cpu").numpy(), decoded.numpy(), average='macro')
+
+        avg_loss.update(loss.item(), crf_scores.size(0))
+        avg_score.update(f1, sum(lengths))
+
+    return avg_loss.avg, avg_score.avg
 
 
-def evaluate(model, criterion, data_loader):
-    """Evaluates the model over all data in data_loader
-
-    Args:
-        model: (torch.nn.Module) an instance of the model class.
-        criterion: a loss function
-        data_loader: (torch.util.data.DataLoader)
-    """
-    # set the model to evaluation mode
-    model.eval()
-
-    for seqs, labels, lengths in data_loader:
-        # compute model output and loss
-        outputs = model(seqs, lengths)
-        labels = pack_padded_sequence(labels, lengths, batch_first=True, enforce_sorted=False).data
-        loss = criterion(outputs, labels.view(-1))
-        acc = net.accuracy(outputs, labels)
-    return float(loss), float(acc)
-
-
-def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, config, checkpoint_dir, checkpoint_file=None):
+def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, start_epoch, best_f1, viterbi_decoder,
+                       config, checkpoint_dir, checkpoint_file=None):
     """Trains and evaluates the model for `epochs` times
 
     Args:
@@ -91,47 +84,70 @@ def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, co
         checkpoint_dir: (str) directory to save checkpoint files in
         checkpoint_file: (str) file name of checkpoint to be loaded before training
     """
-
-    if checkpoint_file is not None:
-        utils.load_checkpoint(checkpoint_file, model, optimizer)
-
+    lr = config.lr
     losses = []
-    best_val_acc = 0
 
-    for epoch in trange(config.epochs):
-        loss, train_acc = train(model, optimizer, criterion, train_loader)
+    for epoch in trange(start_epoch, config.epochs):
+        loss, train_score = train(model, optimizer, criterion, train_loader, epoch, viterbi_decoder)
         losses.append(float(loss))
-        _, val_acc = evaluate(model, criterion, val_loader)
+        _, val_score = evaluate(model, criterion, val_loader, viterbi_decoder)
 
-        logging.info('Epoch: ' + str(epoch) + ' Loss: ' + str(loss) \
-                     + '\nTraining Accuracy: ' + str(train_acc) + ' Validation Accuracy: ' + str(val_acc))
+        logging.info('Epoch: ' + str(epoch) + '\nTraining Loss: ' + str(train_score) + ' Validation Accuracy: ' + str(val_loss))
 
-        is_best = val_acc > best_val_acc
-        utils.save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(),
-                               'optim_dict': optimizer.state_dict()}, is_best, checkpoint_dir)
+        is_best = val_score > best_f1
+        best_f1 = max(val_score, best_f1)
+
+        utils.save_checkpoint(
+            {'epoch': epoch, 'model': model, 'optimizer': optimizer, 'val_score': val_loss, 'char_map': char_map,
+             'tag_map': tag_map}, is_best, checkpoint_dir)
+
+        utils.adjust_learning_rate(optimizer, epoch, lr, config.lr_decay)
 
 
 if __name__ == '__main__':
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        print('Training on GPU ... ')
+    else:
+        device = torch.device('cpu')
+        print('Training on CPU')
+
     args = parse_arguments(argparse.ArgumentParser())
     data_dir = args.data_dir
     config_dir = args.config_dir
     checkpoint_dir = args.checkpoint_dir
+    checkpoint_file = args.checkpoint_file
     utils.set_logger(os.path.join(config_dir, 'logging.conf'))
     config = Config(os.path.join(config_dir, 'config.json'))
 
-    reader = DataReader(data_dir, config)
-    train_dataset = POSDataset(*reader.create_input_tensors('train.txt', device))
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size)
-    val_dataset = POSDataset(*reader.create_input_tensors('dev.txt', device))
+    start_epoch = 0
+    best_f1 = 0
+
+    if checkpoint_file is not None:
+        checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file)
+        checkpoint = utils.load_checkpoint(checkpoint_path)
+        model = checkpoint['model']
+        optimizer = checkpoint['optimizer']
+        char_map = checkpoint['char_map']
+        tag_map = checkpoint['tag_map']
+        start_epoch = checkpoint['epoch'] + 1
+        best_f1 = checkpoint['f1']
+        reader = DataReader(data_dir, config, checkpoint_path)
+    else:
+        reader = DataReader(data_dir, config)
+        # model = Net(config).to(device)
+        model = LSTM_CRF(tag_set_size=len(reader.tag_map), char_set_size=len(reader.char_map), config=config)
+        optimizer = torch.optim.SGD(params=filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr,
+                                    momentum=config.momentum)
+
+    criterion = ViterbiLoss(reader.tag_map).to(device)
+    viterbi_decoder = ViterbiDecoder(reader.tag_map)
+
+    train_dataset = POSDataset(*reader.create_input_tensors('ar_padt-ud-train.conllu', device))
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
+    val_dataset = POSDataset(*reader.create_input_tensors('ar_padt-ud-dev.conllu', device))
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size)
 
-    model = Net(config).to(device)
-    criterion = torch.nn.NLLLoss(ignore_index=0, reduction='mean').to(device)
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=config.learning_rate)
-
-    train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, config, checkpoint_dir)
+    train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, start_epoch, best_f1, viterbi_decoder,
+                       config, checkpoint_dir)
     # os.path.join(checkpoint_dir, 'checkpoint.pth.tar')
-
-
-
-

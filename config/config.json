@@ -1,6 +1,8 @@
 {
     "json_path": "config.json",
-    "learning_rate": 0.001,
+    "lr": 0.015,
+    "momentum": 0.9,
+    "lr_decay": 0.05,
     "batch_size": 5,
     "epochs": 1000,
     "embedding_dim": 30,

@@ -5,18 +5,25 @@ import torch
 from torch.utils.data import Dataset
 import conllu
 
-from utils import Config
+import utils
 
 
 class POSDataset(Dataset):
-    def __init__(self, sentences, labels, lengths):
-        self.sentences = sentences
-        self.labels = labels
-        self.lengths = lengths
-        self.data_size = self.sentences.size(0)
+    def __init__(self, forward_char_seqs, backward_char_seqs, forward_markers_list, backward_markers_list, tag_seqs,
+                 char_seqs_lengths, tag_seqs_lengths):
+        self.forward_char_seqs = forward_char_seqs
+        self.backward_char_seqs = backward_char_seqs
+        self.forward_markers_list = forward_markers_list
+        self.backward_markers_list = backward_markers_list
+        self.tag_seqs = tag_seqs
+        self.char_seqs_lengths = char_seqs_lengths
+        self.tag_seqs_lengths = tag_seqs_lengths
+
+        self.data_size = self.tag_seqs.size(0)
 
     def __getitem__(self, i):
-        return self.sentences[i], self.labels[i], self.lengths[i]
+        return self.forward_char_seqs[i], self.backward_char_seqs[i], self.forward_markers_list[i], \
+               self.backward_markers_list[i], self.tag_seqs[i], self.char_seqs_lengths[i], self.tag_seqs_lengths[i]
 
     def __len__(self):
         return self.data_size
@@ -27,46 +34,40 @@ class DataReader:
     Read and prepare dataset
     """
 
-    def __init__(self, data_dir, config):
+    def __init__(self, data_dir, config, checkpoint_path=None):
         """create char and tag maps
 
         Args:
             data_dir: (string) directory containing the dataset
             config: (Config) training hyperparameters
+            checkpoint_file: checkpoint file to retrieve maps
         """
         self.data_dir = data_dir
         self.config = config
+        if checkpoint_path is not None:
+            checkpoint = utils.load_checkpoint(checkpoint_path)
+            self.tag_map = checkpoint['tag_map']
+            self.char_map = checkpoint['char_map']
+        else:
+            # loading training sequences
+            token_seqs, tag_seqs = self.get_token_tag_seqs(os.path.join(data_dir, 'ar_padt-ud-train.conllu'))
 
-        # loading training sequences
-        token_seqs, tag_seqs = self.get_token_tag_seqs(os.path.join(data_dir, 'ar_padt-ud-train.conllu'))
+            # create char and tag maps
+            char_freq = Counter()
+            tag_set = set()
+            for token_seq, tag_seq in zip(token_seqs, tag_seqs):
+                char_freq.update(list(reduce(lambda x, y: list(x) + [' '] + list(y), token_seq)))
+                tag_set.update(tag_seq)
 
-        # create char and tag maps
-        char_freq = Counter()
-        tag_set = set()
-        for token_seq, tag_seq in zip(token_seqs, tag_seqs):
-            char_freq.update(list(reduce(lambda x, y: list(x) + [' '] + list(y), token_seq)))
-            tag_set.update(tag_seq)
-
-        self.char_map = {k: v + 1 for v, k in
-                         enumerate([char for char in char_freq.keys() if char_freq[char] >= config.min_char_freq])}
-        self.tag_map = {k: v + 1 for v, k in enumerate(tag_set)}
-        self.char_map['<PAD>'] = 0
-        self.char_map['<END>'] = len(self.char_map)
-        self.char_map['<UNK>'] = len(self.char_map)
-        self.tag_map['<PAD>'] = 0
-        self.char_map['<START>'] = len(self.tag_map)
-        self.tag_map['<END>'] = len(self.tag_map)
-
-        with open(os.path.join(data_dir, 'vocab.txt'), 'r') as f:
-            content = f.readlines()
-        self.vocab = {k.strip(): v for v, k in enumerate(content)}
-
-        with open(os.path.join(data_dir, 'tag_set.txt'), 'r') as f:
-            content = f.readlines()
-        self.tag_set = {k.strip(): v for v, k in enumerate(content)}
-
-        self.unk_idx = self.vocab[self.config.unk_word]
-        self.padword_idx = self.vocab[self.config.pad_word]
+            self.char_map = {k: v + 1 for v, k in
+                             enumerate([char for char in char_freq.keys() if char_freq[char] >= config.min_char_freq])}
+            self.tag_map = {k: v + 1 for v, k in enumerate(tag_set)}
+            self.char_map['<PAD>'] = 0
+            self.char_map['<END>'] = len(self.char_map)
+            self.char_map['<UNK>'] = len(self.char_map)
+            self.tag_map['<PAD>'] = 0
+            self.char_map['<START>'] = len(self.tag_map)
+            self.tag_map['<END>'] = len(self.tag_map)
 
     def get_token_tag_seqs(self, data_file):
         token_seqs = []
@@ -130,7 +131,8 @@ class DataReader:
                 range(1, len(encoded_tag_seq))], encoded_tag_seqs))
 
         # Padding sequences
-        max_char_seq_len = max([len(encoded_forward_char_seq) for encoded_forward_char_seq in encoded_forward_char_seqs])
+        max_char_seq_len = max(
+            [len(encoded_forward_char_seq) for encoded_forward_char_seq in encoded_forward_char_seqs])
         max_tag_seq_len = max([len(encoded_tag_seq) for encoded_tag_seq in encoded_tag_seqs])
 
         padded_forward_char_seqs = []
@@ -173,4 +175,3 @@ class DataReader:
                torch.tensor(padded_tag_seqs, dtype=torch.int64, device=device), \
                torch.tensor(char_seqs_lengths, dtype=torch.int64, device=device), \
                torch.tensor(tag_seqs_lengths, dtype=torch.int64, device=device)
-
