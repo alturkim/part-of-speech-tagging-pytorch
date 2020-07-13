@@ -2,6 +2,8 @@ import argparse
 import os
 from utils import Config
 
+# This script was used in an initial version of the project that uses word-level LSTM.
+
 
 def extract_vocab_tags(data_dir):
     config = Config('config.json')
@@ -41,7 +43,7 @@ if __name__ == '__main__':
     output = ''
     for form in vocab:
         output += form + '\n'
-    with open(os.path.join(data_dir,'vocab.txt'), 'w') as f:
+    with open(os.path.join(data_dir, 'vocab.txt'), 'w') as f:
         f.write(output.strip())
 
     tag_output = ''

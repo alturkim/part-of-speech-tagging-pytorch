@@ -1,10 +1,10 @@
 # Part-of-Speech Tagging using pytorch
-in progrees 
+Coming: web interface for the model...
+
+Part-speech-tagger using Character BiLSTM and Conditional Random Fields. 
 
 # Dataset
-
-# Model Architecture
-
+UD Arabic PADT.
 # Results
 Accuracy on test set: 
 # Resources

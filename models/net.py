@@ -9,9 +9,10 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.config = config
         self.embedding = nn.Embedding(self.config.vocab_size, self.config.embedding_dim)
-        self.lstm = nn.LSTM(self.config.embedding_dim, self.config.lstm_hidden_dim, bidirectional=True, batch_first=True)
+        self.lstm = nn.LSTM(self.config.embedding_dim, self.config.lstm_hidden_dim, bidirectional=True,
+                            batch_first=True)
         self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Linear(self.config.lstm_hidden_dim*2, self.config.tag_set_size)
+        self.fc = nn.Linear(self.config.lstm_hidden_dim * 2, self.config.tag_set_size)
 
     def forward(self, x, x_lengths):
         x = self.embedding(x)
@@ -20,7 +21,7 @@ class Net(nn.Module):
         x = x.data
         x = self.dropout(x)
         x = x.contiguous()
-        x = x.view(-1, self.config.lstm_hidden_dim*2)
+        x = x.view(-1, self.config.lstm_hidden_dim * 2)
         x = self.fc(x)
         return F.log_softmax(x, dim=1)
 
@@ -47,9 +48,80 @@ class CRF(nn.Module):
         """
         batch_size = x.size(0)
         timesteps = x.size(1)
-        emission_scores = self.emission(x).unsqueeze(2).expand(batch_size, timesteps, self.tagset_size, self.tagset_size)
+        emission_scores = self.emission(x).unsqueeze(2).expand(batch_size, timesteps, self.tagset_size,
+                                                               self.tagset_size)
         crf_score = emission_scores + self.transition.unsqueeze(0).unsqueeze(0)
         return crf_score
+
+
+class LSTM_CRF(nn.Module):
+    def __init__(self, tag_set_size, char_set_size, config):
+        super(LSTM_CRF, self).__init__()
+
+        self.tag_set_size = tag_set_size
+        self.char_set_size = char_set_size
+        self.embedding_dim = config.embedding_dim
+        self.lstm_hidden_dim = config.lstm_hidden_dim
+        self.num_layers = config.num_layers
+        self.dropout = nn.Dropout(p=config.dropout)
+
+        self.embedding = nn.Embedding(self.char_set_size, self.embedding_dim)
+        self.forward_lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim, num_layers=self.num_layers,
+                                    dropout=config.dropout)
+        self.backward_lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim, num_layers=self.num_layers,
+                                     dropout=config.dropout)
+        self.crf = CRF(self.lstm_hidden_dim, self.tag_set_size)
+
+    def forward(self, padded_forward_char_seqs, padded_backward_char_seqs, padded_forward_markers_list,
+                padded_backward_markers_list, padded_tag_seqs, char_seqs_lengths, tag_seqs_lengths):
+
+        self.batch_size = padded_forward_char_seqs.size(0)
+        max_char_seq_len = max(char_seqs_lengths.tolist())
+
+        # Sort by length
+        char_seqs_lengths, char_sort_idx = char_seqs_lengths.sort(dim=0, descending=True)
+        padded_forward_char_seqs = padded_forward_char_seqs[char_sort_idx]
+        padded_backward_char_seqs = padded_backward_char_seqs[char_sort_idx]
+        padded_forward_markers_list = padded_forward_markers_list[char_sort_idx]
+        padded_backward_markers_list = padded_backward_markers_list[char_sort_idx]
+        padded_tag_seqs = padded_tag_seqs[char_sort_idx]
+
+        forward_embeddings = self.embedding(padded_forward_char_seqs)
+        backward_embeddings = self.embedding(padded_backward_char_seqs)
+
+        forward_embeddings = self.dropout(forward_embeddings)
+        backward_embeddings = self.dropout(backward_embeddings)
+
+        forward_embeddings = pack_padded_sequence(forward_embeddings, char_seqs_lengths.tolist(), batch_first=True)
+        backward_embeddings = pack_padded_sequence(backward_embeddings, char_seqs_lengths.tolist(), batch_first=True)
+
+        forward_hidden, _ = self.forward_lstm(forward_embeddings)
+        backward_hidden, _ = self.backward_lstm(backward_embeddings)
+
+        forward_hidden, _ = pad_packed_sequence(forward_hidden, batch_first=True)
+        backward_hidden, _ = pad_packed_sequence(backward_hidden, batch_first=True)
+
+        # Sanity check
+        assert forward_hidden.size(1) == max(char_seqs_lengths.tolist()) == list(char_seqs_lengths)[0]
+
+        padded_forward_markers_list = padded_forward_markers_list.unsqueeze(2).expand(self.batch_size, max_char_seq_len,
+                                                                                      self.lstm_hidden_dim)
+        padded_backward_markers_list = padded_backward_markers_list.unsqueeze(2).expand(self.batch_size,
+                                                                                        self.max_seq_len,
+                                                                                        self.lstm_hidden_dim)
+        forward_hidden_selected = torch.gather(forward_hidden, 1, padded_forward_markers_list)
+        backward_hidden_selected = torch.gather(backward_hidden, 1, padded_backward_markers_list)
+
+        tag_seqs_lengths, tag_seqs_sort_idxs = padded_tag_seqs.sort(dim=0, descending=True)
+        padded_tag_seqs = padded_tag_seqs[tag_seqs_sort_idxs]
+        forward_hidden_selected = forward_hidden_selected[tag_seqs_sort_idxs]
+        backward_hidden_selected = backward_hidden_selected[tag_seqs_sort_idxs]
+
+        combined_hidden = torch.cat((forward_hidden_selected, backward_hidden_selected), dim=2)
+
+        crf_scores = self.crf(combined_hidden)
+
+        return crf_scores
 
 
 
@@ -66,4 +138,4 @@ def accuracy(outputs, labels):
     labels = labels.view(-1)
     mask = (labels > 0).float()
     outputs = torch.argmax(outputs, dim=1)
-    return torch.sum(outputs == labels)/float(torch.sum(mask))
+    return torch.sum(outputs == labels) / float(torch.sum(mask))

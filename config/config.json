@@ -2,14 +2,9 @@
     "json_path": "config.json",
     "learning_rate": 0.001,
     "batch_size": 5,
-    "epochs": 10,
-    "embedding_dim": 4,
-    "lstm_hidden_dim": 3,
-    "pad_word": "<PAD>",
-    "unk_word": "<UNK>",
-    "minimum_count_word": 10,
-    "minimum_count_tag": 1,
-    "vocab_size": 28309,
-    "tag_set_size": 39,
+    "epochs": 1000,
+    "embedding_dim": 30,
+    "lstm_hidden_dim": 50,
+    "min_char_freq": 10,
     "save_summary_steps": 100
 }
