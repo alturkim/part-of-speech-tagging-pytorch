@@ -94,7 +94,7 @@ def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, st
         _, val_score = evaluate(model, criterion, val_loader, viterbi_decoder)
 
         logging.info(
-            'Epoch: ' + str(epoch) + '\nTraining Loss: ' + str(train_score) + ' Validation Score: ' + str(val_score))
+            'Epoch: ' + str(epoch) + '\nTraining Loss: ' + str(loss) + ' Validation Score: ' + str(val_score))
 
         is_best = val_score > best_f1
         best_f1 = max(val_score, best_f1)
@@ -141,7 +141,7 @@ if __name__ == '__main__':
         best_f1 = checkpoint['f1']
     else:
         # model = Net(config).to(device)
-        model = LSTM_CRF(tag_set_size=len(reader.tag_map), char_set_size=len(reader.char_map), config=config)
+        model = LSTM_CRF(tag_set_size=len(reader.tag_map), char_set_size=len(reader.char_map), config=config).to(device)
         optimizer = torch.optim.SGD(params=filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr,
                                     momentum=config.momentum)
 
