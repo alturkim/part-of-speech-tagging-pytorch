@@ -66,22 +66,43 @@ def save_checkpoint(state, is_best, checkpoint_dir):
         torch.save(state, os.path.join(checkpoint_dir, 'BEST_checkpoint.pth.tar'))
 
 
+def save_maps(maps, checkpoint_dir):
+    """Saves data dictionary to be used when evaluating or testing the model on different dataset
+
+    Args:
+        maps: (dict) dictionary of dictionaries mapping data to codes
+        checkpoint_dir: (str) Directory name to save maps files in.
+    """
+    if not os.path.exists(checkpoint_dir):
+        print("Creating a directory {}".format(checkpoint_dir))
+        os.mkdir(checkpoint_dir)
+    torch.save(maps, os.path.join(checkpoint_dir, 'maps.pth.tar'))
+
+
 def load_checkpoint(checkpoint_path):
     """Loads model and training parameters
 
     Args:
         checkpoint_path: (str) path to checkpoint file to be used
-        model: (torch.nn.Module) model for which the parameters are loaded
-        optimizer: (torch.nn.optim) optimizer to be resumed from checkpoint
     """
     if not os.path.exists(checkpoint_path):
         raise IOError('Checkpoint file {} does not exist'.format(checkpoint_path))
     logging.info('Restoring parameters from {}'.format(checkpoint_path))
     checkpoint = torch.load(checkpoint_path)
     return checkpoint
-    # model.load_state_dict(checkpoint['state_dict'])
-    # if optimizer:
-    #     optimizer.load_state_dict(checkpoint['optim_dict'])
+
+
+def load_maps(maps_path):
+    """Loads maps of data used in training the model
+
+    Args:
+        checkpoint_path: (str) path to checkpoint file to be used
+    """
+    if not os.path.exists(maps_path):
+        raise IOError('Maps file {} does not exist'.format(maps_path))
+    logging.info('Restoring maps from {}'.format(maps_path))
+    maps = torch.load(maps_path)
+    return maps
 
 
 def adjust_learning_rate(optimizer, epoch, lr, lr_decay):

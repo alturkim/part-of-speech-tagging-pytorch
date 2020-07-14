@@ -22,6 +22,7 @@ def parse_arguments(parser):
     parser.add_argument('--checkpoint_dir', default='checkpoints/',
                         help='Directory to save and load models parameters.')
     parser.add_argument('--checkpoint_file', help='Checkpoint file containing models parameters.')
+    parser.add_argument('--maps_file', help='Checkpoint file containing maps of training data.')
 
     args = parser.parse_args()
     for k, v in vars(args).items():
@@ -58,9 +59,9 @@ def train(model, optimizer, criterion, data_loader, epoch, viterbi_decoder):
 
         lengths = tag_seqs_lengths - 1
         lengths = lengths.tolist()
-        decoded, _ = pack_padded_sequence(decoded, lengths, batch_first=True)
+        decoded = pack_padded_sequence(decoded, lengths, batch_first=True).data
         tag_seqs = tag_seqs % viterbi_decoder.tag_set_size
-        tag_seqs, _ = pack_padded_sequence(tag_seqs, lengths, batch_first=True)
+        tag_seqs = pack_padded_sequence(tag_seqs, lengths, batch_first=True).data
 
         f1 = f1_score(tag_seqs.to("cpu").numpy(), decoded.numpy(), average='macro')
 
@@ -92,14 +93,14 @@ def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, st
         losses.append(float(loss))
         _, val_score = evaluate(model, criterion, val_loader, viterbi_decoder)
 
-        logging.info('Epoch: ' + str(epoch) + '\nTraining Loss: ' + str(train_score) + ' Validation Accuracy: ' + str(val_loss))
+        logging.info(
+            'Epoch: ' + str(epoch) + '\nTraining Loss: ' + str(train_score) + ' Validation Score: ' + str(val_score))
 
         is_best = val_score > best_f1
         best_f1 = max(val_score, best_f1)
 
         utils.save_checkpoint(
-            {'epoch': epoch, 'model': model, 'optimizer': optimizer, 'val_score': val_loss, 'char_map': char_map,
-             'tag_map': tag_map}, is_best, checkpoint_dir)
+            {'epoch': epoch, 'model': model, 'optimizer': optimizer, 'val_score': val_score}, is_best, checkpoint_dir)
 
         utils.adjust_learning_rate(optimizer, epoch, lr, config.lr_decay)
 
@@ -117,24 +118,28 @@ if __name__ == '__main__':
     config_dir = args.config_dir
     checkpoint_dir = args.checkpoint_dir
     checkpoint_file = args.checkpoint_file
+    maps_file = args.maps_file
     utils.set_logger(os.path.join(config_dir, 'logging.conf'))
     config = Config(os.path.join(config_dir, 'config.json'))
 
     start_epoch = 0
     best_f1 = 0
 
+    if maps_file is not None:
+        reader = DataReader(data_dir, config, os.path.join(checkpoint_dir, maps_file))
+    else:
+        reader = DataReader(data_dir, config)
+        maps = {'char_map': reader.char_map, 'tag_map': reader.tag_map}
+        utils.save_maps(maps, checkpoint_dir)
+
     if checkpoint_file is not None:
         checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file)
         checkpoint = utils.load_checkpoint(checkpoint_path)
         model = checkpoint['model']
         optimizer = checkpoint['optimizer']
-        char_map = checkpoint['char_map']
-        tag_map = checkpoint['tag_map']
         start_epoch = checkpoint['epoch'] + 1
         best_f1 = checkpoint['f1']
-        reader = DataReader(data_dir, config, checkpoint_path)
     else:
-        reader = DataReader(data_dir, config)
         # model = Net(config).to(device)
         model = LSTM_CRF(tag_set_size=len(reader.tag_map), char_set_size=len(reader.char_map), config=config)
         optimizer = torch.optim.SGD(params=filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr,

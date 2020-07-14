@@ -1,5 +1,5 @@
 import os
-from _collections import Counter
+from collections import Counter
 from functools import reduce
 import torch
 from torch.utils.data import Dataset
@@ -34,7 +34,7 @@ class DataReader:
     Read and prepare dataset
     """
 
-    def __init__(self, data_dir, config, checkpoint_path=None):
+    def __init__(self, data_dir, config, maps_path=None):
         """create char and tag maps
 
         Args:
@@ -44,10 +44,10 @@ class DataReader:
         """
         self.data_dir = data_dir
         self.config = config
-        if checkpoint_path is not None:
-            checkpoint = utils.load_checkpoint(checkpoint_path)
-            self.tag_map = checkpoint['tag_map']
-            self.char_map = checkpoint['char_map']
+        if maps_path is not None:
+            maps = utils.load_checkpoint(maps_path)
+            self.tag_map = maps['tag_map']
+            self.char_map = maps['char_map']
         else:
             # loading training sequences
             token_seqs, tag_seqs = self.get_token_tag_seqs(os.path.join(data_dir, 'ar_padt-ud-train.conllu'))
@@ -66,7 +66,7 @@ class DataReader:
             self.char_map['<END>'] = len(self.char_map)
             self.char_map['<UNK>'] = len(self.char_map)
             self.tag_map['<PAD>'] = 0
-            self.char_map['<START>'] = len(self.tag_map)
+            self.tag_map['<START>'] = len(self.tag_map)
             self.tag_map['<END>'] = len(self.tag_map)
 
     def get_token_tag_seqs(self, data_file):
@@ -88,7 +88,7 @@ class DataReader:
 
     def create_input_tensors(self, data_file, device):
         """
-        Credit: Major parts of this method are due to Sagar Vinodababu,
+        Credit: Major parts of this method are adapted from Sagar Vinodababu,
         see https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Sequence-Labeling/tree/041f75a37497bd1b712a426b7d18631251ecd749
         """
 

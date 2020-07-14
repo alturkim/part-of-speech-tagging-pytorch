@@ -5,7 +5,7 @@ import torch
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.utils.data import DataLoader
 from sklearn.metrics import f1_score
-from models import net
+from models.net import ViterbiLoss
 import utils
 from utils import Config
 from reader import POSDataset, DataReader
@@ -47,9 +47,9 @@ def evaluate(model, criterion, data_loader, viterbi_decoder):
 
         lengths = tag_seqs_lengths - 1
         lengths = lengths.tolist()
-        decoded, _ = pack_padded_sequence(decoded, lengths, batch_first=True)
+        decoded = pack_padded_sequence(decoded, lengths, batch_first=True).data
         tag_seqs = tag_seqs % viterbi_decoder.tag_set_size
-        tag_seqs, _ = pack_padded_sequence(tag_seqs, lengths, batch_first=True)
+        tag_seqs = pack_padded_sequence(tag_seqs, lengths, batch_first=True).data
 
         f1 = f1_score(tag_seqs.to("cpu").numpy(), decoded.numpy(), average='macro')
 
@@ -59,9 +59,12 @@ def evaluate(model, criterion, data_loader, viterbi_decoder):
 
 
 if __name__ == '__main__':
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if torch.cuda.is_available():
-        print('Testing on GPU ... ')
+        device = torch.device('cuda')
+        print('Evaluating on GPU ... ')
+    else:
+        device = torch.device('cpu')
+        print('Evaluating on CPU ... ')
 
     args = parse_arguments(argparse.ArgumentParser())
     data_dir = args.data_dir
@@ -70,15 +73,16 @@ if __name__ == '__main__':
     config = Config(os.path.join(config_dir, 'config.json'))
 
     reader = DataReader(data_dir, config)
-    dataset = POSDataset(*reader.create_input_tensors('test.txt', device))
+    dataset = POSDataset(*reader.create_input_tensors('ar_padt-ud-test.conllu', device))
     loader = DataLoader(dataset)
 
-    model = net.Net(config).to(device)
-    utils.load_checkpoint(checkpoint_file, model)
-
+    # model = net.Net(config).to(device)
+    # utils.load_checkpoint(checkpoint_file, model)
+    checkpoint = utils.load_checkpoint(checkpoint_file)
+    model = checkpoint['model']
     viterbi_decoder = ViterbiDecoder(reader.tag_map)
-    criterion = torch.nn.NLLLoss(ignore_index=0, reduction='mean').to(device)
-    print('Evaluation starting ...')
+    criterion = ViterbiLoss(reader.tag_map).to(device)
+    print('Starting Evaluation ...')
     loss, f1 = evaluate(model, criterion, loader, viterbi_decoder)
     print('Evaluation done ...')
     print('F1 score on test data: ', f1)

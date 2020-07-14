@@ -1,12 +1,12 @@
 # Part-of-Speech Tagging using pytorch
 Coming: web interface for the model...
 
-Part-speech-tagger using Character BiLSTM and Conditional Random Fields. 
+Part-of-speech-tagger using Character BiLSTM and Conditional Random Fields. 
 
 # Dataset
-UD Arabic PADT.
+Arabic PADT part of the Universal Dependency corpus.
 # Results
-Accuracy on test set: 
+F1 score on test set: Training in progress ...
 # Resources
 [Stanford CS230 Pytorch code examples.](https://github.com/cs230-stanford/cs230-code-examples/tree/478e747b1c8bf57c6e2ce6b7ffd8068fe0287056/pytorch/nlp)
 

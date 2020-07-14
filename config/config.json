@@ -3,10 +3,12 @@
     "lr": 0.015,
     "momentum": 0.9,
     "lr_decay": 0.05,
-    "batch_size": 5,
-    "epochs": 1000,
+    "dropout": 0.5,
+    "batch_size": 300,
+    "epochs": 500,
     "embedding_dim": 30,
     "lstm_hidden_dim": 50,
-    "min_char_freq": 10,
+    "num_layers": 2,
+    "min_char_freq": 5,
     "save_summary_steps": 100
 }

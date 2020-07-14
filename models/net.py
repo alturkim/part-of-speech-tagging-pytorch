@@ -27,16 +27,16 @@ class Net(nn.Module):
 
 
 class CRF(nn.Module):
-    def __init__(self, hidden_dim, tagset_size):
+    def __init__(self, hidden_dim, tag_set_size):
         """
         Args:
             hidden_dim: (int) dim of LSTM output
-            target_size: (int) number of tags
+            tag_set_size: (int) number of tags
         """
         super(CRF, self).__init__()
-        self.tagset_size = tagset_size
-        self.emission = nn.Linear(hidden_dim, self.target_size)
-        self.transition = nn.Parameter(torch.zeros((self.target_size, self.target_size), dtype=torch.float64))
+        self.tag_set_size = tag_set_size
+        self.emission = nn.Linear(hidden_dim, self.tag_set_size)
+        self.transition = nn.Parameter(torch.zeros((self.tag_set_size, self.tag_set_size), dtype=torch.float64))
 
     def forward(self, x):
         """
@@ -44,12 +44,12 @@ class CRF(nn.Module):
             x: (tensor) output of LSTM, dimension (batch_size, timesteps, hidden_dim)
 
         Returns:
-            tensor: CRF scores, dimension (batch_size, timesteps, target_size, target_size)
+            tensor: CRF scores, dimension (batch_size, timesteps, tag_set_size, tag_set_size)
         """
         batch_size = x.size(0)
         timesteps = x.size(1)
-        emission_scores = self.emission(x).unsqueeze(2).expand(batch_size, timesteps, self.tagset_size,
-                                                               self.tagset_size)
+        emission_scores = self.emission(x).unsqueeze(2).expand(batch_size, timesteps, self.tag_set_size,
+                                                               self.tag_set_size)
         crf_score = emission_scores + self.transition.unsqueeze(0).unsqueeze(0)
         return crf_score
 
@@ -70,7 +70,7 @@ class LSTM_CRF(nn.Module):
                                     dropout=config.dropout)
         self.backward_lstm = nn.LSTM(self.embedding_dim, self.lstm_hidden_dim, num_layers=self.num_layers,
                                      dropout=config.dropout)
-        self.crf = CRF(self.lstm_hidden_dim, self.tag_set_size)
+        self.crf = CRF(2*self.lstm_hidden_dim, self.tag_set_size)
 
     def forward(self, padded_forward_char_seqs, padded_backward_char_seqs, padded_forward_markers_list,
                 padded_backward_markers_list, padded_tag_seqs, char_seqs_lengths, tag_seqs_lengths):
@@ -107,7 +107,7 @@ class LSTM_CRF(nn.Module):
         padded_forward_markers_list = padded_forward_markers_list.unsqueeze(2).expand(batch_size, max_tag_seq_len,
                                                                                       self.lstm_hidden_dim)
         padded_backward_markers_list = padded_backward_markers_list.unsqueeze(2).expand(batch_size,
-                                                                                        self.max_tag_seq_len,
+                                                                                        max_tag_seq_len,
                                                                                         self.lstm_hidden_dim)
         forward_hidden_selected = torch.gather(forward_hidden, 1, padded_forward_markers_list)
         backward_hidden_selected = torch.gather(backward_hidden, 1, padded_backward_markers_list)
@@ -118,6 +118,15 @@ class LSTM_CRF(nn.Module):
         backward_hidden_selected = backward_hidden_selected[tag_seqs_sort_idxs]
 
         combined_hidden = torch.cat((forward_hidden_selected, backward_hidden_selected), dim=2)
+
+        # print('lstm_hidden_dim', self.lstm_hidden_dim)
+        # print('padded_forward_char_seqs', padded_forward_char_seqs.size())
+        # print('padded_forward_markers_list', padded_forward_markers_list.size())
+        # print('padded_tag_seqs', padded_tag_seqs.size())
+        # print('forward_hidden_selected', forward_hidden_selected.size())
+        # print('backward_hidden_selected', backward_hidden_selected.size())
+        # print('combined_hidden', combined_hidden.size())
+
 
         crf_scores = self.crf(combined_hidden)
 
@@ -147,7 +156,7 @@ class ViterbiLoss(nn.Module):
 
         targets = targets.unsqueeze(2)
         scores_at_targets = torch.gather(scores.view(batch_size, max_tag_seq_len, -1), 2, targets).squeeze(2)
-        scores_at_targets, _ = pack_padded_sequence(scores_at_targets, lengths, batch_first=True)
+        scores_at_targets = pack_padded_sequence(scores_at_targets, lengths, batch_first=True).data
         true_scores = scores_at_targets.sum()
 
         aggregate_scores = torch.zeros(batch_size, self.tag_set_size)
