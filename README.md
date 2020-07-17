@@ -23,9 +23,22 @@ F1 score on test set: 0.9241
  
 # Usage
 To train the model run the following command:  
-`python train.py --data_dir DATA_DIR --config_dir CONFIG_DIR --checkpoint_dir CHECKPOINT_DIR --checkpoint_file CHECKPOINTFILE --maps_file MAP_FILE`  
+```
+python train.py  --data_dir DATA_DIR 
+                 --config_dir CONFIG_DIR 
+                 --checkpoint_dir CHECKPOINT_DIR 
+                 --checkpoint_file CHECKPOINTFILE 
+                 --maps_file MAP_FILE
+```  
+
 To evaluate the model on the test data run the following command:   
-`python  evaluate.py --data_dir DATA_DIR --config_dir CONFIG_DIR --checkpoint_dir CHECKPOINT_DIR --checkpoint_file CHECKPOINTFILE --maps_file MAP_FILE`
+```
+python  evaluate.py --data_dir DATA_DIR 
+                    --config_dir CONFIG_DIR 
+                    --checkpoint_dir CHECKPOINT_DIR 
+                    --checkpoint_file CHECKPOINTFILE 
+                    --maps_file MAP_FILE
+```
 ### Note
 `map_file.pth.tar` contains dictionaries used to maps characters and tags during the training process, it will be created 
 before training, if not available, and should be used when evaluating the model on new datasets.
