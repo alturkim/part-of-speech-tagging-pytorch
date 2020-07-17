@@ -1,29 +1,6 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-
-
-class Net(nn.Module):
-    def __init__(self, config):
-        super(Net, self).__init__()
-        self.config = config
-        self.embedding = nn.Embedding(self.config.vocab_size, self.config.embedding_dim)
-        self.lstm = nn.LSTM(self.config.embedding_dim, self.config.lstm_hidden_dim, bidirectional=True,
-                            batch_first=True)
-        self.dropout = nn.Dropout(p=0.5)
-        self.fc = nn.Linear(self.config.lstm_hidden_dim * 2, self.config.tag_set_size)
-
-    def forward(self, x, x_lengths):
-        x = self.embedding(x)
-        x = pack_padded_sequence(x, x_lengths, batch_first=True, enforce_sorted=False)
-        x, _ = self.lstm(x)
-        x = x.data
-        x = self.dropout(x)
-        x = x.contiguous()
-        x = x.view(-1, self.config.lstm_hidden_dim * 2)
-        x = self.fc(x)
-        return F.log_softmax(x, dim=1)
 
 
 class CRF(nn.Module):
@@ -119,15 +96,6 @@ class LSTM_CRF(nn.Module):
 
         combined_hidden = torch.cat((forward_hidden_selected, backward_hidden_selected), dim=2)
 
-        # print('lstm_hidden_dim', self.lstm_hidden_dim)
-        # print('padded_forward_char_seqs', padded_forward_char_seqs.size())
-        # print('padded_forward_markers_list', padded_forward_markers_list.size())
-        # print('padded_tag_seqs', padded_tag_seqs.size())
-        # print('forward_hidden_selected', forward_hidden_selected.size())
-        # print('backward_hidden_selected', backward_hidden_selected.size())
-        # print('combined_hidden', combined_hidden.size())
-
-
         crf_scores = self.crf(combined_hidden)
 
         return crf_scores, padded_tag_seqs, tag_seqs_lengths
@@ -175,19 +143,3 @@ class ViterbiLoss(nn.Module):
         viterbi_loss = viterbi_loss / batch_size
 
         return viterbi_loss
-
-
-def accuracy(outputs, labels):
-    """Computes the accuracy given models outputs and ground truth labels, excluding terms for <PAD>
-
-    Args:
-        outputs: (Tensor) models outputs. Dimension: batch_size*seq_len x tag_set_size
-        labels: (Tensor) ground truth label. Dimension: batch_size x seq_len. 0 for <PAD>
-
-    Returns:
-        accuracy: (float)
-    """
-    labels = labels.view(-1)
-    mask = (labels > 0).float()
-    outputs = torch.argmax(outputs, dim=1)
-    return torch.sum(outputs == labels) / float(torch.sum(mask))

@@ -88,7 +88,8 @@ def load_checkpoint(checkpoint_path):
     if not os.path.exists(checkpoint_path):
         raise IOError('Checkpoint file {} does not exist'.format(checkpoint_path))
     logging.info('Restoring parameters from {}'.format(checkpoint_path))
-    checkpoint = torch.load(checkpoint_path)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     return checkpoint
 
 

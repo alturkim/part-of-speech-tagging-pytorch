@@ -15,8 +15,11 @@ from models.viterbi_decoder import  ViterbiDecoder
 def parse_arguments(parser):
     parser.add_argument('--data_dir', default='data/', help="Directory containing the dataset")
     parser.add_argument('--config_dir', default='config/', help='Directory containing config.json')
-    parser.add_argument('--checkpoint_file', default='checkpoints/BEST_checkpoint.pth.tar', \
-                        help='Checkpoint file containing the model weights.')
+    parser.add_argument('--checkpoint_dir', default='checkpoints/',
+                        help='Directory to load models parameters from.')
+    parser.add_argument('--checkpoint_file', default='BEST_checkpoint.pth.tar', \
+                        help='Checkpoint file containing models parameters.')
+    parser.add_argument('--maps_file', default='maps.pth.tar', help='Checkpoint file containing maps of training data.')
 
     args = parser.parse_args()
     for k, v in vars(args).items():
@@ -68,17 +71,17 @@ if __name__ == '__main__':
 
     args = parse_arguments(argparse.ArgumentParser())
     data_dir = args.data_dir
+    checkpoint_dir = args.checkpoint_dir
     checkpoint_file = args.checkpoint_file
+    maps_file = args.maps_file
     config_dir = args.config_dir
     config = Config(os.path.join(config_dir, 'config.json'))
 
-    reader = DataReader(data_dir, config)
+    reader = DataReader(data_dir, config, os.path.join(checkpoint_dir, maps_file))
     dataset = POSDataset(*reader.create_input_tensors('ar_padt-ud-test.conllu', device))
     loader = DataLoader(dataset)
 
-    # model = net.Net(config).to(device)
-    # utils.load_checkpoint(checkpoint_file, model)
-    checkpoint = utils.load_checkpoint(checkpoint_file)
+    checkpoint = utils.load_checkpoint(os.path.join(checkpoint_dir,checkpoint_file))
     model = checkpoint['model']
     viterbi_decoder = ViterbiDecoder(reader.tag_map)
     criterion = ViterbiLoss(reader.tag_map).to(device)

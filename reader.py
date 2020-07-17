@@ -4,7 +4,6 @@ from functools import reduce
 import torch
 from torch.utils.data import Dataset
 import conllu
-
 import utils
 
 
@@ -122,9 +121,6 @@ class DataReader:
         encoded_tag_seqs = list(
             map(lambda tag_seq: list(map(lambda tag: self.tag_map[tag], tag_seq)) + [self.tag_map['<END>']], tag_seqs))
 
-        # TODO
-        # Since we're using CRF scores of size (prev_tags, cur_tags), find indices of target sequence in the unrolled scores
-        # This will be row_index (i.e. prev_tag) * n_columns (i.e. tagset_size) + column_index (i.e. cur_tag)
         encoded_tag_seqs = list(map(
             lambda encoded_tag_seq: [self.tag_map['<START>'] * len(self.tag_map) + encoded_tag_seq[0]] + [
                 encoded_tag_seq[i - 1] * len(self.tag_map) + encoded_tag_seq[i] for i in

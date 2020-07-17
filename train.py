@@ -11,7 +11,7 @@ from sklearn.metrics import f1_score
 import utils
 from utils import Config
 from reader import DataReader, POSDataset
-from models.net import Net, ViterbiLoss, LSTM_CRF
+from models.net import ViterbiLoss, LSTM_CRF
 from models.viterbi_decoder import ViterbiDecoder
 from evaluate import evaluate
 
@@ -102,7 +102,7 @@ def train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, st
         utils.save_checkpoint(
             {'epoch': epoch, 'model': model, 'optimizer': optimizer, 'val_score': val_score}, is_best, checkpoint_dir)
 
-        utils.adjust_learning_rate(optimizer, epoch, lr, config.lr_decay)
+        # utils.adjust_learning_rate(optimizer, epoch, lr, config.lr_decay)
 
 
 if __name__ == '__main__':
@@ -138,12 +138,10 @@ if __name__ == '__main__':
         model = checkpoint['model']
         optimizer = checkpoint['optimizer']
         start_epoch = checkpoint['epoch'] + 1
-        best_f1 = checkpoint['f1']
+        best_f1 = checkpoint['val_score']
     else:
-        # model = Net(config).to(device)
         model = LSTM_CRF(tag_set_size=len(reader.tag_map), char_set_size=len(reader.char_map), config=config).to(device)
-        optimizer = torch.optim.SGD(params=filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr,
-                                    momentum=config.momentum)
+        optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr)
 
     criterion = ViterbiLoss(reader.tag_map).to(device)
     viterbi_decoder = ViterbiDecoder(reader.tag_map)
@@ -155,4 +153,3 @@ if __name__ == '__main__':
 
     train_and_evaluate(model, optimizer, criterion, train_loader, val_loader, start_epoch, best_f1, viterbi_decoder,
                        config, checkpoint_dir)
-    # os.path.join(checkpoint_dir, 'checkpoint.pth.tar')
