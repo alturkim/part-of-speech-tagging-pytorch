@@ -1,4 +1,4 @@
-# Part-of-Speech Tagging using pytorch
+# Character BiLSTM-CRFs Part-of-Speech Tagger
 Coming: web interface for the model...
 
 Part-of-speech-tagger using Character BiLSTM and Conditional Random Fields. 
